@@ -13,7 +13,7 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
-FILE = "CAMERA_SERVICE.py"
+FILE = "CAMERA_SERVICE.PY"
 
 _manager = None
 frame_dict = None          
