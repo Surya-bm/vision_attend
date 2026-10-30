@@ -1,0 +1,502 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Detection VMS — Live View</title>
+<style>
+  :root{
+    --bg-void:#0a0e17;
+    --bg-panel:#0f1626;
+    --bg-tile:#131b2c;
+    --bg-tile-head:#0d1424;
+    --hairline:#232f45;
+    --text-primary:#e7ecf5;
+    --text-dim:#7280a0;
+    --text-faint:#4b5876;
+    --cyan:#41d6e8;
+    --blue:#3fa9ff;
+    --live:#39d98a;
+    --alert:#ff5c5c;
+    --offline:#8a7cff;
+    --shadow:0 6px 18px rgba(0,0,0,.4);
+  }
+  [data-theme="light"]{
+    --bg-void:#eef1f6;
+    --bg-panel:#ffffff;
+    --bg-tile:#f5f7fb;
+    --bg-tile-head:#eef1f7;
+    --hairline:#dde3ee;
+    --text-primary:#141a2a;
+    --text-dim:#5b6478;
+    --text-faint:#9aa3b8;
+    --shadow:0 6px 18px rgba(20,25,40,.08);
+  }
+
+  *{box-sizing:border-box;}
+  html, body{ height:100%; }
+  body{
+    font-family:Arial, 'Segoe UI', sans-serif;
+    background:var(--bg-void); color:var(--text-primary);
+    margin:0; padding:0; transition:background .2s ease, color .2s ease;
+    display:flex; flex-direction:column;
+  }
+  .mono{ font-family:'Consolas','IBM Plex Mono',monospace; }
+
+  .viewport-fit{
+    height:100vh; min-height:0;
+    display:flex; flex-direction:column;
+    overflow:hidden;
+  }
+  .viewport-fit > .titlebar,
+  .viewport-fit > header,
+  .viewport-fit > .control-bar,
+  .viewport-fit > .overflow-notice,
+  .viewport-fit > .grid-section-title{
+    flex:0 0 auto;
+  }
+  .viewport-fit > .camera-grid{
+    flex:1 1 auto;
+    min-height:0;
+  }
+  .below-fold{ padding:16px; }
+  h2.section-title{
+    font-size:15px; font-weight:700; border-bottom:2px solid var(--hairline);
+    padding-bottom:8px; margin:0 0 14px; color:var(--text-primary);
+  }
+
+  .titlebar{
+    background:var(--bg-tile-head); border-bottom:1px solid var(--hairline);
+    padding:6px 14px; font-size:11.5px; color:var(--text-dim);
+  }
+
+  header{
+    display:flex; align-items:center; gap:14px;
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
+    padding:10px 16px;
+  }
+  .logo{ display:flex; align-items:center; gap:10px; margin-right:6px; }
+  .logo-img{
+    width:160px;
+    height:45px;
+    object-fit:contain;
+  }
+
+  img.logo-img.logo-dark{ display:block; }
+  img.logo-img.logo-light{ display:none; }
+  [data-theme="light"] img.logo-img.logo-dark{ display:none; }
+  [data-theme="light"] img.logo-img.logo-light{ display:block; }
+
+  .logo-text{ font-weight:800; font-size:16px; letter-spacing:.02em; color:var(--cyan); }
+  .logo-sub{ font-size:10px; color:var(--text-dim); letter-spacing:.04em; margin-top:1px; }
+
+  .btn{
+    display:flex; align-items:center; gap:6px;
+    background:var(--bg-tile); border:1px solid var(--hairline);
+    color:var(--text-primary); padding:8px 13px; border-radius:6px;
+    font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .btn:hover{ border-color:var(--cyan); color:var(--cyan); }
+  .btn svg{ width:14px; height:14px; }
+
+  .btn-live{ background:var(--blue); color:#04121e; border-color:var(--blue); }
+  .btn-live:hover{ color:#04121e; opacity:.9; }
+
+  .alert-pill{
+    background:var(--alert); color:#1a0505; font-weight:700; font-size:12.5px;
+    padding:8px 14px; border-radius:6px; display:flex; align-items:center; gap:6px;
+  }
+
+  .spacer{ flex:1; }
+
+  .clock-box{ text-align:right; margin-right:4px; line-height:1.2; }
+  .clock-time{ font-size:16px; font-weight:700; color:var(--cyan); letter-spacing:.03em; }
+  .clock-date{ font-size:10.5px; color:var(--text-dim); }
+
+  .theme-toggle{
+    width:42px; height:24px; border-radius:20px; background:var(--bg-tile);
+    border:1px solid var(--hairline); position:relative; cursor:pointer; flex-shrink:0;
+  }
+  .theme-toggle .knob{
+    position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--cyan); transition:left .2s ease;
+    display:flex; align-items:center; justify-content:center; font-size:10px;
+  }
+  [data-theme="light"] .theme-toggle .knob{ left:20px; }
+
+  .control-bar{
+    display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
+    padding:10px 16px;
+  }
+  .control-label{ font-size:12px; color:var(--text-dim); font-weight:600; }
+  select#groupFilter{
+    background:var(--bg-tile); color:var(--text-primary); border:1px solid var(--hairline);
+    padding:7px 10px; border-radius:6px; font-size:12.5px; min-width:150px;
+  }
+  .grid-btns{ display:flex; gap:5px; flex-wrap:wrap; }
+  .grid-btn{
+    background:var(--bg-tile); border:1px solid var(--hairline); color:var(--text-dim);
+    padding:7px 14px; border-radius:6px; font-size:12.5px; font-weight:600; cursor:pointer;
+  }
+  .grid-btn.active{ background:var(--blue); color:#04121e; border-color:var(--blue); }
+  .grid-btn:hover:not(.active){ color:var(--text-primary); }
+
+  .overflow-notice{
+    display:none; background:var(--bg-tile); border:1px solid var(--hairline);
+    color:var(--text-dim); font-size:12px; padding:6px 12px;
+  }
+
+  .camera-grid{
+    display:grid; gap:6px; padding:8px;
+    height:100%; width:100%;
+  }
+  .camera-card{
+    background:var(--bg-tile); border-radius:6px; overflow:hidden;
+    border:1px solid var(--hairline); box-shadow:var(--shadow);
+    display:flex; flex-direction:column; height:100%; min-height:0;
+  }
+  .cam-card-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:5px 9px; background:var(--bg-tile-head);
+    font-size:11px; border-bottom:1px solid var(--hairline);
+    flex:0 0 auto; gap:8px;
+  }
+  .cam-card-head .cam-name{ color:var(--cyan); font-weight:700; }
+  .cam-status{ display:flex; align-items:center; gap:5px; color:var(--text-dim); }
+  .cam-status .dot{ width:6px; height:6px; border-radius:50%; background:var(--live); }
+  .cam-card-head.is-offline .dot{ background:var(--alert); }
+
+  .camera-card img{
+    width:100%; flex:1 1 auto; min-height:0; display:block;
+    background:#000; object-fit:cover; cursor:pointer;
+  }
+
+  .camera-card img:fullscreen,
+  .camera-card img:-webkit-full-screen{
+    width:100vw; height:100vh; object-fit:contain; background:#000;
+  }
+
+  .cam-modal{
+    display:none; position:fixed; inset:0; z-index:1000;
+    background:rgba(0,0,0,.92);
+    align-items:center; justify-content:center;
+  }
+  .cam-modal.open{ display:flex; }
+  .cam-modal-body{ width:90vw; height:90vh; display:flex; }
+  .cam-modal-body img{
+    width:100%; height:100%; object-fit:contain; background:#000;
+  }
+  .cam-modal-body .camera-card{ width:100%; height:100%; }
+  .cam-modal-close{
+    position:absolute; top:20px; right:24px;
+    background:var(--bg-tile); color:var(--text-primary); border:1px solid var(--hairline);
+    padding:10px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer;
+  }
+  .cam-modal-close:hover{ border-color:var(--alert); color:var(--alert); }
+  .camera-label{
+    padding:4px 9px; font-size:11px; color:var(--text-dim);
+    display:flex; justify-content:space-between;
+    border-top:1px solid var(--hairline); flex:0 0 auto;
+  }
+  .camera-label b{ color:var(--text-primary); font-weight:600; }
+
+  .no-cams{ color:var(--text-faint); font-size:13px; padding:20px; }
+
+  .slot-placeholder{
+    height:100%; min-height:0;
+    border-radius:6px; border:1px solid var(--hairline);
+    background-image:
+      linear-gradient(45deg, #1b2338 25%, transparent 25%),
+      linear-gradient(-45deg, #1b2338 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #1b2338 75%),
+      linear-gradient(-45deg, transparent 75%, #1b2338 75%);
+    background-size:28px 28px;
+    background-position:0 0, 0 14px, 14px -14px, -14px 0px;
+    background-color:#10141e;
+    display:flex; align-items:center; justify-content:center;
+  }
+  [data-theme="light"] .slot-placeholder{
+    background-image:
+      linear-gradient(45deg, #dde3ee 25%, transparent 25%),
+      linear-gradient(-45deg, #dde3ee 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #dde3ee 75%),
+      linear-gradient(-45deg, transparent 75%, #dde3ee 75%);
+    background-color:#eef1f7;
+  }
+  .slot-placeholder span{
+    font-size:22px; font-weight:800; color:var(--text-faint);
+    text-shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+
+  #cameraPool{ display:none; }
+
+  table{ width:100%; border-collapse:collapse; background:var(--bg-tile); border-radius:8px; overflow:hidden; }
+  th, td{ padding:10px 12px; border-bottom:1px solid var(--hairline); text-align:left; font-size:13px; }
+  th{ color:var(--text-dim); text-transform:uppercase; font-size:11px; background:var(--bg-tile-head); }
+  .harmful{ color:var(--alert); font-weight:bold; }
+  .non-harmful{ color:var(--live); font-weight:bold; }
+  .det-thumb{ width:60px; height:60px; object-fit:cover; border-radius:4px; }
+
+  .fps-display{
+    color:var(--text-dim);
+    font-size:10.5px;
+    font-family:'Consolas','IBM Plex Mono',monospace;
+    letter-spacing:.02em;
+    white-space:nowrap;
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+  <div class="cam-modal" id="camModal">
+    <button class="cam-modal-close" id="camModalClose">✕ Close</button>
+    <div class="cam-modal-body" id="camModalBody"></div>
+  </div>
+
+  <div class="viewport-fit" id="viewportFit">
+  <header>
+    <div class="logo">
+      <img class="logo-img logo-dark" src="{% static 'images/CA;ytixLogo1 f2-Photoroom.png' %}" alt="Logo">
+      <img class="logo-img logo-light" src="{% static 'images/CAytixLogo  f2.png' %}" alt="Logo">
+    </div>
+
+  
+
+    <div class="control-bar">
+    <span class="control-label">Camera Group:</span>
+    <select id="groupFilter">
+      <option value="all">All</option>
+      {% for cam in cameras %}
+        {% if cam.type %}
+          <option value="{{ cam.type }}">{{ cam.type }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+
+    <span class="control-label">Grid:</span>
+    <div class="grid-btns" id="gridBtns">
+      <button class="grid-btn active" data-layout="2">2</button>
+      <button class="grid-btn" data-layout="4">4</button>
+      <button class="grid-btn" data-layout="8">8</button>
+      <button class="grid-btn" data-layout="16">16</button>
+      <button class="grid-btn" data-layout="32">32</button>
+      <button class="grid-btn" data-layout="64">64</button>
+    </div>
+
+    <div class="spacer"></div>
+  </div>
+
+    <div class="spacer"></div>
+
+    <div class="clock-box">
+      <div class="clock-time mono" id="clockTime">--:--:--</div>
+      <div class="clock-date" id="clockDate">-- --- ----</div>
+    </div>
+
+    <div class="theme-toggle" id="themeToggle" title="Toggle dark / light mode">
+      <div class="knob" id="themeKnob">🌙</div>
+    </div>
+  </header>
+
+  <div class="grid-section-title" style="display:none"></div>
+
+  <div id="cameraPool">
+    {% for cam in cameras %}
+    <div class="camera-card" data-group="{{ cam.type|default:'all' }}" data-cam-id="{{ cam.id }}">
+      <div class="cam-card-head">
+        <span class="cam-name">{{ cam.model_name }} - {{ cam.type }}</span>
+        <span class="fps-display">- FPS</span>
+        <span class="cam-status"><span class="dot"></span>Live</span>
+      </div>
+      <img class="cam-stream" data-src="{% url 'video_feed' cam.id %}" alt="{{ cam.asset_no }}">
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="camera-grid" id="cameraGrid">
+    {% if not cameras %}<p class="no-cams">No active cameras found.</p>{% endif %}
+  </div>
+
+  </div><!-- /.viewport-fit -->
+  </div><!-- /.below-fold -->
+
+<script>
+  /* ---------------- LIVE CLOCK ---------------- */
+  function tickClock(){
+    const now = new Date();
+    document.getElementById('clockTime').textContent = now.toLocaleTimeString('en-GB', { hour12:false });
+    document.getElementById('clockDate').textContent = now.toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short', year:'numeric' });
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  /* ---------------- THEME TOGGLE ---------------- */
+  const themeToggle = document.getElementById('themeToggle');
+  const themeKnob = document.getElementById('themeKnob');
+  themeToggle.onclick = () => {
+    const body = document.body;
+    const isDark = body.getAttribute('data-theme') === 'dark';
+    body.setAttribute('data-theme', isDark ? 'light' : 'dark');
+    themeKnob.textContent = isDark ? '☀️' : '🌙';
+  };
+
+  /* ---------------- BACKEND STREAMING FPS FETCH ---------------- */
+  async function fetchLiveFPS() {
+    try {
+        const response = await fetch("/get_camera_fps/");
+        const fpsData = await response.json();
+        document.querySelectorAll(".camera-card").forEach(card=>{
+            const camId = card.dataset.camId;
+            const fpsEl = card.querySelector(".fps-display")
+            if(!fpsEl)
+                return;
+            if(fpsData.hasOwnProperty(camId))
+            {
+                fpsEl.innerHTML =
+                    fpsData[camId].toFixed(1) + " FPS";
+            }
+            else
+            {
+                fpsEl.innerHTML = "0 FPS";
+            }
+        });
+    }
+    catch(err)
+    {
+        console.log(err);
+    }
+}
+setInterval(fetchLiveFPS,1000);
+fetchLiveFPS();
+
+ /* ---------------- GRID LAYOUT ENGINE --------------- */
+  const LAYOUTS = {
+    '2' : { cols:2, rows:1, slots:2  },
+    '4' : { cols:2, rows:2, slots:4  },
+    '8' : { cols:4, rows:2, slots:8  },
+    '16': { cols:4, rows:4, slots:16 },
+    '32': { cols:8, rows:4, slots:32 },
+    '64': { cols:8, rows:8, slots:64 },
+  };
+
+  const allCards = Array.from(document.querySelectorAll('#cameraPool .camera-card'));
+  let currentLayout = '2';
+
+  function makePlaceholder(num){
+    const div = document.createElement('div');
+    div.className = 'slot-placeholder';
+    div.innerHTML = `<span>${num}</span>`;
+    return div;
+  }
+
+  function connectCard(card){
+    const img = card.querySelector('img[data-src]');
+    if (img && !img.src){
+      img.src = img.dataset.src;
+    }
+  }
+
+  function disconnectCard(card){
+    const img = card.querySelector('img[data-src]');
+    if (img) img.removeAttribute('src');
+  }
+
+  function getFilteredCards(){
+    const val = document.getElementById('groupFilter').value;
+    return allCards.filter(c => val === 'all' || c.getAttribute('data-group') === val);
+  }
+
+  function applyLayout(layoutKey){
+    if (typeof camModal !== 'undefined' && camModal.classList.contains('open')) closeCamModal();
+
+    currentLayout = layoutKey;
+    const cfg = LAYOUTS[layoutKey];
+    const pool = document.getElementById('cameraPool');
+    const grid = document.getElementById('cameraGrid');
+
+    allCards.forEach(c => { disconnectCard(c); pool.appendChild(c); });
+    grid.innerHTML = '';
+
+    if (!allCards.length){
+      grid.innerHTML = '<p class="no-cams">No active cameras found.</p>';
+      return;
+    }
+
+    const cards = getFilteredCards();
+
+    grid.className = 'camera-grid';
+    grid.style.gridTemplateColumns = `repeat(${cfg.cols}, 1fr)`;
+    grid.style.gridTemplateRows = `repeat(${cfg.rows}, 1fr)`;
+    for (let i = 0; i < cfg.slots; i++){
+      const card = cards[i];
+      if (card){
+        connectCard(card);
+        grid.appendChild(card);
+      } else {
+        grid.appendChild(makePlaceholder(i + 1));
+      }
+    }
+  }
+
+  document.querySelectorAll('.grid-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.grid-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyLayout(btn.getAttribute('data-layout'));
+    });
+  });
+
+  document.getElementById('groupFilter').addEventListener('change', () => applyLayout(currentLayout));
+
+
+  /* ---------------- DOUBLE-CLICK POPUP MODAL ---------------- */
+  const cameraGridEl = document.getElementById('cameraGrid');
+  const camModal = document.getElementById('camModal');
+  const camModalBody = document.getElementById('camModalBody');
+  const camModalClose = document.getElementById('camModalClose');
+
+  let modalCard = null;
+  let modalOriginParent = null;
+  let modalOriginNextSibling = null;
+
+  function openCamModal(card){
+    const img = card.querySelector('img[data-src]');
+    if (!img || !img.src) return;
+
+    modalCard = card;
+    modalOriginParent = card.parentElement;
+    modalOriginNextSibling = card.nextSibling;
+
+    camModalBody.appendChild(card);
+    camModal.classList.add('open');
+  }
+
+  function closeCamModal(){
+    if (modalCard && modalOriginParent){
+      if (modalOriginNextSibling) modalOriginParent.insertBefore(modalCard, modalOriginNextSibling);
+      else modalOriginParent.appendChild(modalCard);
+    }
+    modalCard = null;
+    modalOriginParent = null;
+    modalOriginNextSibling = null;
+    camModal.classList.remove('open');
+  }
+
+  function handleTileActivate(target){
+    const card = target.closest('.camera-card');
+    if (!card) return;
+    openCamModal(card);
+  }
+
+  camModalClose.addEventListener('click', closeCamModal);
+  camModal.addEventListener('click', (e) => { if (e.target === camModal) closeCamModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && camModal.classList.contains('open')) closeCamModal(); });
+
+  cameraGridEl.addEventListener('dblclick', (e) => handleTileActivate(e.target));
+
+  applyLayout(currentLayout);
+</script>
+</body>
+</html>

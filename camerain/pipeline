@@ -1,0 +1,70 @@
+================================================================================================================
+                                          CCTV LIVE RTSP STREAM
+================================================================================================================
+                                                    │
+                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 0: INGESTION & TRACKING                                                                               │
+│  • InternalCaptureThread: Captures RTSP stream in dedicated thread (Queue size = 2, prevents frame lag)     │
+│  • Port / Instance Filter: Syncs active cameras dynamically from DB based on instance port                   │
+│  • LightweightFaceTracker: Tracks faces across frames using Centroid / IoU tracking (Assigns ID-1, ID-2...) │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 1: INSIGHTFACE DETECTION (SCRFD)                                                                      │
+│  • Input resolution: (480x480) optimized for GPU                                                             │
+│  • Output: Bounding Box (x1, y1, x2, y2) + 5 Facial Landmarks (Left Eye, Right Eye, Nose, Mouth Corners)      │
+│  • Max Faces per frame: MAX_FACES = 10                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 2: FEATURE EXTRACTION (model)                                                           │
+│  • Normalized Vector: 512-Dimensional Floating Point Embedding (L2-Norm = 1.0)                               │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│  STAGE 3: FAST VECTORIZED COMPARISON (RAM Matrix)                                                            │
+│  • sims = matrix @ current_emb  (Contains BOTH 'normal' and 'mask' embeddings for all persons)              │
+│  • Margin Check: margin = top_1_sim - top_2_sim  (Prevents ambiguous false matches)                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                    │
+                                                    ▼
+                             ┌─────────────────────────────────────────────┐
+                             │  SIMILARITY_THRESHOLD >= 0.46 & Confident?  │
+                             └──────────────────────┬──────────────────────┘
+                                                    │
+                      ┌─────────────────────────────┴─────────────────────────────┐
+                     YES                                                         NO
+                      │                                                           │
+                      ▼                                                           ▼
+┌───────────────────────────────────────────┐       ┌───────────────────────────────────────────────────┐
+│ BRANCH A: REGISTERED EMPLOYEE / KNOWN     │       │ BRANCH B: CANDIDATE STRANGER                      │
+├───────────────────────────────────────────┤       ├───────────────────────────────────────────────────┤
+│ 1. UI Display:                            │       │ 1. Frontal Quality Filter:                        │
+│    • Green Box: Name + Conf %             │       │    • det_score >= 0.70                            │
+│    • E.g.: "Surya 94.2%" or               │       │    • Face Box >= 60x60px                          │
+│      "Stranger-[51] 95.1%"                │       │    • abs(yaw) <= 28° & abs(pitch) <= 28°          │
+│                                           │       │    • Eye distance >= 22px                         │
+│ 2. Cancel Stranger Timer:                 │       │    • If NOT frontal: Yellow Box [Unknown] & Skip  │
+│    • Purges track_id from stranger        │       │                                                   │
+│      candidates dictionary                │       │ 2. Confirmation Hold Delay (1.5s / 3 Frames):     │
+│                                           │       │    • < 1.5s: Orange Box "Verifying... (0.5s)"     │
+│ 3. Attendance Execution:                  │       │    • >= 1.5s: Red Box "[ID] Stranger"             │
+│    • Burn OSD timestamp & camera bar      │       │                                                   │
+│    • Send JSON payload to Attendance API  │       │ 3. RAM Deduplication Check:                       │
+│      (POST /api/ImageInsert)              │       │    • _is_duplicate_stranger(emb, threshold=0.45) │
+│    • API stores record in person_face DB  │       │    • If matches existing stranger: Cache & Skip   │
+│                                           │       │                                                   │
+│ 4. Auto-Learning (conf >= 0.58):          │       │ 4. Async Auto-Enrollment (Queue -> DB):           │
+│    • If wearing mask -> learns to         │       │    • _stranger_insert_lock prevents DB race       │
+│      face_embedding_mask                  │       │    • Insert into person table:                    │
+│    • If normal face -> learns to          │       │      (name="", category="Stranger", mask=None)    │
+│      face_embedding                       │       │    • MySQL assigns auto-increment unique_id (52)  │
+│    • Keeps up to 5 best distinct vectors  │       │                                                   │
+│                                           │       │ 5. Instant RAM Matrix Update:                     │
+│                                           │       │    • Appends new embedding to RAM matrix instantly│
+│                                           │       │    • Next frame matches immediately (No duplicates│
+└───────────────────────────────────────────┘       └───────────────────────────────────────────────────┘
