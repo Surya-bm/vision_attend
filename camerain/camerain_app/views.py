@@ -15,8 +15,8 @@ from django.http import StreamingHttpResponse,JsonResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.db import close_old_connections
-from .models import Camera, Person, PersonFace
-from datetime import timedelta
+from .models import Camera, Person
+# from datetime import timedelta
 
 from colorama import Fore, Style, init
 init(autoreset=True)
